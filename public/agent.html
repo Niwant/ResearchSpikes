@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent - Meeting Bot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffeaa7;
+        }
+        
+        .audio-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        
+        .sound-waves {
+            display: flex;
+            gap: 5px;
+            height: 40px;
+            align-items: flex-end;
+        }
+        
+        .wave {
+            width: 5px;
+            background: linear-gradient(to top, #667eea, #764ba2);
+            border-radius: 5px;
+            animation: wave 1s ease-in-out infinite;
+        }
+        
+        .wave:nth-child(1) { animation-delay: 0s; height: 10px; }
+        .wave:nth-child(2) { animation-delay: 0.1s; height: 20px; }
+        .wave:nth-child(3) { animation-delay: 0.2s; height: 30px; }
+        .wave:nth-child(4) { animation-delay: 0.3s; height: 40px; }
+        .wave:nth-child(5) { animation-delay: 0.4s; height: 35px; }
+        .wave:nth-child(6) { animation-delay: 0.5s; height: 25px; }
+        .wave:nth-child(7) { animation-delay: 0.6s; height: 15px; }
+        
+        @keyframes wave {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(1.5); }
+        }
+        
+        .stats {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+        
+        .log {
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 10px;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            margin: 3px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 AI Agent Bot</h1>
+        <div class="subtitle">Capturing meeting audio via getUserMedia()</div>
+        
+        <div id="status" class="status connecting">
+            Initializing...
+        </div>
+        
+        <div class="audio-indicator" id="audioIndicator" style="display: none;">
+            <div class="sound-waves">
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stats-row">
+                <span>Audio captured:</span>
+                <span id="audioChunks">0 chunks</span>
+            </div>
+            <div class="stats-row">
+                <span>Server connection:</span>
+                <span id="serverStatus">Disconnected</span>
+            </div>
+            <div class="stats-row">
+                <span>Audio output queue:</span>
+                <span id="queueSize">0</span>
+            </div>
+        </div>
+        
+        <div class="log" id="logContainer"></div>
+    </div>
+
+    <script>
+        // State
+        let mediaStream = null;
+        let audioContext = null;
+        let workletNode = null;
+        let wsInput = null;  // WebSocket for sending audio TO server
+        let wsOutput = null; // WebSocket for receiving audio FROM server
+        let audioChunkCount = 0;
+        let audioOutputQueue = [];
+        let isPlayingOutput = false;
+        
+        // Logging
+        function log(message, level = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = level === 'error' ? '❌' : level === 'success' ? '✅' : '📝';
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.textContent = `${emoji} [${timestamp}] ${message}`;
+            const logContainer = document.getElementById('logContainer');
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`${emoji} ${message}`);
+        }
+        
+        // Update UI
+        function updateStatus(className, text) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = `status ${className}`;
+            statusEl.textContent = text;
+        }
+        
+        function updateStats() {
+            document.getElementById('audioChunks').textContent = `${audioChunkCount} chunks`;
+            document.getElementById('queueSize').textContent = audioOutputQueue.length;
+        }
+        
+        // Connect to server WebSockets (both input and output)
+        async function connectToServer() {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsHost = window.location.host;
+            
+            // Connect to INPUT WebSocket (for sending audio TO server)
+            const inputPromise = new Promise((resolve, reject) => {
+                try {
+                    const wsInputUrl = `${wsProtocol}//${wsHost}/meeting-audio-in`;
+                    log(`Connecting INPUT WebSocket: ${wsInputUrl}`);
+                    wsInput = new WebSocket(wsInputUrl);
+                    
+                    wsInput.onopen = () => {
+                        log('✅ INPUT WebSocket connected (for sending audio)', 'success');
+                        resolve();
+                    };
+                    
+                    wsInput.onerror = (error) => {
+                        log('❌ INPUT WebSocket error', 'error');
+                        reject(error);
+                    };
+                    
+                    wsInput.onclose = (event) => {
+                        log(`INPUT WebSocket closed (code: ${event.code})`, 'error');
+                        document.getElementById('serverStatus').textContent = 'Disconnected ❌';
+                    };
+                } catch (error) {
+                    reject(error);
+                }
+            });
+            
+            // Connect to OUTPUT WebSocket (for receiving audio FROM server)
+            const outputPromise = new Promise((resolve, reject) => {
+                try {
+                    const wsOutputUrl = `${wsProtocol}//${wsHost}/agent-audio-out`;
+                    log(`Connecting OUTPUT WebSocket: ${wsOutputUrl}`);
+                    wsOutput = new WebSocket(wsOutputUrl);
+                    
+                    wsOutput.onopen = () => {
+                        log('✅ OUTPUT WebSocket connected (for receiving AI audio)', 'success');
+                        resolve();
+                    };
+                    
+                    wsOutput.onmessage = (event) => {
+                        try {
+                            const message = JSON.parse(event.data);
+                            
+                            if (message.type === 'audio' && message.data) {
+                                log(`🎵 Received AI audio response (~${(message.data.length / 1024).toFixed(1)} KB)`, 'success');
+                                audioOutputQueue.push(message.data);
+                                updateStats();
+                                playNextAudioOutput();
+                            }
+                        } catch (error) {
+                            log(`Error processing AI audio: ${error.message}`, 'error');
+                        }
+                    };
+                    
+                    wsOutput.onerror = (error) => {
+                        log('❌ OUTPUT WebSocket error', 'error');
+                        reject(error);
+                    };
+                    
+                    wsOutput.onclose = (event) => {
+                        log(`OUTPUT WebSocket closed (code: ${event.code})`, 'error');
+                    };
+                } catch (error) {
+                    reject(error);
+                }
+            });
+            
+            // Wait for BOTH connections to establish
+            try {
+                await Promise.all([inputPromise, outputPromise]);
+                log('🚀 BOTH WebSockets connected! Pipeline ready!', 'success');
+                document.getElementById('serverStatus').textContent = 'Connected ✅';
+                updateStatus('connected', 'Connected - Full pipeline active');
+                document.getElementById('audioIndicator').style.display = 'flex';
+            } catch (error) {
+                log(`WebSocket connection failed: ${error.message}`, 'error');
+                document.getElementById('serverStatus').textContent = 'Error ❌';
+                throw error;
+            }
+        }
+        
+        // Capture meeting audio using getUserMedia
+        async function captureMeetingAudio() {
+            try {
+                log('Requesting access to meeting audio...');
+                log(`Running in: ${window.location.href}`);
+                
+                // Check if getUserMedia is available
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('getUserMedia not supported in this browser/context');
+                }
+                
+                // CRITICAL: In Recall.ai bot context, we need to capture the TAB's audio
+                // Use getDisplayMedia() to capture the meeting tab/window audio
+                let mediaStream = null;
+                
+                try {
+                    log('Attempting to capture tab/window audio with getDisplayMedia()...');
+                    
+                    // Try getDisplayMedia first (captures screen/tab audio)
+                    if (navigator.mediaDevices.getDisplayMedia) {
+                        try {
+                            mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                                video: false,
+                                audio: {
+                                    echoCancellation: false,
+                                    noiseSuppression: false,
+                                    autoGainControl: false,
+                                    suppressLocalAudioPlayback: false
+                                }
+                            });
+                            log('✅ Successfully captured display media audio!', 'success');
+                        } catch (err) {
+                            log(`getDisplayMedia failed: ${err.message}`, 'warning');
+                        }
+                    }
+                    
+                    // Fallback to getUserMedia if getDisplayMedia fails or not available
+                    if (!mediaStream) {
+                        log('Falling back to getUserMedia()...');
+                        
+                        const constraints = [
+                            // Try system audio
+                            {
+                                audio: {
+                                    echoCancellation: false,
+                                    noiseSuppression: false,
+                                    autoGainControl: false,
+                                    // Request system audio if possible
+                                    systemAudio: 'include'
+                                }
+                            },
+                            // Try basic audio
+                            {
+                                audio: {
+                                    echoCancellation: false,
+                                    noiseSuppression: false,
+                                    autoGainControl: false
+                                }
+                            },
+                            // Last resort
+                            { audio: true }
+                        ];
+                        
+                        for (let i = 0; i < constraints.length; i++) {
+                            try {
+                                log(`Attempt ${i + 1}: Trying constraint set ${i + 1}...`);
+                                mediaStream = await navigator.mediaDevices.getUserMedia(constraints[i]);
+                                if (mediaStream) {
+                                    log(`✅ Success with constraint set ${i + 1}!`, 'success');
+                                    break;
+                                }
+                            } catch (err) {
+                                log(`Attempt ${i + 1} failed: ${err.message}`, 'warning');
+                                if (i === constraints.length - 1) {
+                                    throw err;
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    throw new Error(`All audio capture methods failed: ${err.message}`);
+                }
+                
+                if (!mediaStream) {
+                    throw new Error('Could not capture any audio stream');
+                }
+                
+                log('Audio access granted', 'success');
+                log(`Audio tracks: ${mediaStream.getAudioTracks().length}`);
+                
+                // Log detailed track info
+                mediaStream.getAudioTracks().forEach((track, idx) => {
+                    log(`Track ${idx}: ${track.label}, enabled: ${track.enabled}, muted: ${track.muted}`);
+                    log(`Track settings: ${JSON.stringify(track.getSettings())}`);
+                });
+                
+                // Create AudioContext
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                
+                log(`AudioContext created (sampleRate: ${audioContext.sampleRate}Hz)`, 'success');
+                
+                // Use ScriptProcessorNode for audio processing (Web Audio Worklet alternative for compatibility)
+                const bufferSize = 4096;
+                const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+                
+                let lastVolumeLog = 0;
+                let silentChunks = 0;
+                let activeChunks = 0;
+                
+                processor.onaudioprocess = (event) => {
+                    try {
+                        const inputData = event.inputBuffer.getChannelData(0);
+                        
+                        // Calculate RMS volume to detect if audio is actually present
+                        let sum = 0;
+                        for (let i = 0; i < inputData.length; i++) {
+                            sum += inputData[i] * inputData[i];
+                        }
+                        const rms = Math.sqrt(sum / inputData.length);
+                        const volume = rms * 100;
+                        
+                        // Track silence vs active audio
+                        if (volume < 0.1) {
+                            silentChunks++;
+                        } else {
+                            activeChunks++;
+                        }
+                        
+                        // Log volume every 3 seconds
+                        const now = Date.now();
+                        if (now - lastVolumeLog > 3000) {
+                            log(`🎤 Audio levels - Volume: ${volume.toFixed(3)}, Silent: ${silentChunks}, Active: ${activeChunks}`, 
+                                volume < 0.1 ? 'warning' : 'success');
+                            lastVolumeLog = now;
+                            
+                            if (silentChunks > 100 && activeChunks === 0) {
+                                log(`⚠️ WARNING: Only SILENCE detected! Audio might not be capturing meeting audio.`, 'error');
+                                log(`💡 TIP: The bot should capture meeting audio automatically. Check browser console for errors.`, 'warning');
+                            }
+                        }
+                        
+                        // Convert Float32Array to Int16Array (PCM 16-bit)
+                        const pcmData = new Int16Array(inputData.length);
+                        for (let i = 0; i < inputData.length; i++) {
+                            // Clamp to [-1, 1] and convert to 16-bit integer
+                            const s = Math.max(-1, Math.min(1, inputData[i]));
+                            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        }
+                        
+                        // Convert to base64
+                        const base64Audio = arrayBufferToBase64(pcmData.buffer);
+                        
+                        // Send to server via INPUT WebSocket (always send, even if silent)
+                        // ElevenLabs needs continuous audio stream
+                        if (wsInput && wsInput.readyState === WebSocket.OPEN) {
+                            wsInput.send(JSON.stringify({
+                                type: 'audio_chunk',
+                                data: base64Audio,
+                                format: 'pcm16',
+                                sampleRate: audioContext.sampleRate,
+                                volume: volume // Include volume for debugging
+                            }));
+                            
+                            audioChunkCount++;
+                            if (audioChunkCount % 10 === 0) {
+                                log(`Sent ${audioChunkCount} audio chunks to server (vol: ${volume.toFixed(2)})`);
+                                updateStats();
+                            }
+                        }
+                    } catch (err) {
+                        log(`Audio processing error: ${err.message}`, 'error');
+                    }
+                };
+                
+                // Connect the audio pipeline
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                log('Audio processing pipeline established', 'success');
+                updateStatus('connected', 'Capturing audio from meeting 🎙️');
+                
+            } catch (error) {
+                log(`Failed to capture audio: ${error.name} - ${error.message}`, 'error');
+                updateStatus('disconnected', `Error: ${error.message}`);
+                
+                // Don't close WebSocket if audio capture fails - keep connection for debugging
+                log('WebSocket remains connected for debugging', 'info');
+            }
+        }
+        
+        // Play AI audio output
+        async function playNextAudioOutput() {
+            if (isPlayingOutput || audioOutputQueue.length === 0) {
+                return;
+            }
+            
+            isPlayingOutput = true;
+            const base64Audio = audioOutputQueue.shift();
+            updateStats();
+            
+            try {
+                log('🔊 Playing AI response in meeting...', 'info');
+                
+                // Decode base64 to binary
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // ElevenLabs sends PCM 16kHz 16-bit mono audio (per conversation_initiation_metadata)
+                const sampleRate = 16000;
+                
+                // Convert bytes to 16-bit PCM samples
+                const pcmSamples = new Int16Array(bytes.buffer);
+                
+                // Create AudioContext for playback
+                const playbackContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Resume if suspended (browser autoplay policy)
+                if (playbackContext.state === 'suspended') {
+                    await playbackContext.resume();
+                }
+                
+                // Create AudioBuffer
+                const audioBuffer = playbackContext.createBuffer(
+                    1,  // mono
+                    pcmSamples.length,
+                    sampleRate
+                );
+                
+                // Convert Int16 to Float32 for Web Audio API
+                const channelData = audioBuffer.getChannelData(0);
+                for (let i = 0; i < pcmSamples.length; i++) {
+                    channelData[i] = pcmSamples[i] / 32768.0; // Normalize to [-1, 1]
+                }
+                
+                // Create source and play
+                const source = playbackContext.createBufferSource();
+                source.buffer = audioBuffer;
+                
+                // Add gain for volume control
+                const gainNode = playbackContext.createGain();
+                gainNode.gain.value = 2.0; // Boost volume to 200%
+                
+                source.connect(gainNode);
+                gainNode.connect(playbackContext.destination);
+                
+                const duration = audioBuffer.duration;
+                log(`▶️ Playing ${duration.toFixed(2)}s of AI audio in meeting`, 'success');
+                
+                source.onended = () => {
+                    log('✅ AI audio playback finished', 'success');
+                    playbackContext.close();
+                    isPlayingOutput = false;
+                    playNextAudioOutput(); // Play next if queued
+                };
+                
+                source.start(0);
+                
+            } catch (error) {
+                log(`❌ Error playing audio: ${error.message}`, 'error');
+                console.error('Full playback error:', error);
+                isPlayingOutput = false;
+                playNextAudioOutput(); // Try next audio
+            }
+        }
+        
+        // Utility: Convert ArrayBuffer to Base64
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        // Initialize
+        async function init() {
+            try {
+                log('Initializing AI Agent Bot...');
+                
+                // Connect to server first
+                await connectToServer();
+                log('Server connection established', 'success');
+                
+                // Wait a bit then try to capture audio
+                setTimeout(async () => {
+                    try {
+                        await captureMeetingAudio();
+                    } catch (error) {
+                        log(`Audio capture initialization failed: ${error.message}`, 'error');
+                        // Keep page running even if audio fails
+                        log('Page will continue running for debugging', 'info');
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                log(`Initialization error: ${error.message}`, 'error');
+                updateStatus('disconnected', `Init failed: ${error.message}`);
+            }
+        }
+        
+        // Global error handler
+        window.addEventListener('error', (event) => {
+            log(`Global error: ${event.message}`, 'error');
+            console.error('Error details:', event.error);
+        });
+        
+        // Unhandled promise rejection handler
+        window.addEventListener('unhandledrejection', (event) => {
+            log(`Unhandled promise rejection: ${event.reason}`, 'error');
+            console.error('Rejection details:', event.reason);
+        });
+        
+        // Start when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full Pipeline Test - Local</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 20px;
+            background: #0a0a0a;
+            color: #00ff00;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 10px;
+            border: 2px solid #00ff00;
+        }
+        
+        h1 {
+            color: #00ff00;
+            margin: 0;
+            font-size: 32px;
+        }
+        
+        .subtitle {
+            color: #00ffff;
+            margin-top: 10px;
+        }
+        
+        .pipeline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: #111;
+            border-radius: 10px;
+            border: 1px solid #333;
+        }
+        
+        .pipeline-step {
+            flex: 1;
+            text-align: center;
+            padding: 15px;
+            background: #222;
+            border-radius: 5px;
+            margin: 0 5px;
+            border: 2px solid #444;
+        }
+        
+        .pipeline-step.active {
+            border-color: #00ff00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+        
+        .pipeline-arrow {
+            color: #666;
+            font-size: 24px;
+        }
+        
+        .controls {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            margin: 10px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #00cc00;
+            transform: scale(1.05);
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: scale(1);
+        }
+        
+        button.stop {
+            background: #ff0000;
+            color: #fff;
+        }
+        
+        button.stop:hover {
+            background: #cc0000;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat-card {
+            background: #1a1a1a;
+            border: 2px solid #333;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #00ff00;
+        }
+        
+        .log-container {
+            background: #000;
+            border: 2px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        
+        .log-entry {
+            margin: 3px 0;
+            font-size: 13px;
+        }
+        
+        .log-entry.success { color: #00ff00; }
+        .log-entry.error { color: #ff0000; }
+        .log-entry.info { color: #00ffff; }
+        .log-entry.warning { color: #ffff00; }
+        
+        .status-banner {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .status-banner.idle {
+            background: #333;
+            color: #888;
+        }
+        
+        .status-banner.running {
+            background: #004400;
+            color: #00ff00;
+            border: 2px solid #00ff00;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-banner.error {
+            background: #440000;
+            color: #ff0000;
+            border: 2px solid #ff0000;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .audio-visualizer {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            height: 100px;
+            gap: 3px;
+            margin: 20px 0;
+            padding: 10px;
+            background: #000;
+            border-radius: 10px;
+            border: 2px solid #333;
+        }
+        
+        .audio-bar {
+            width: 10px;
+            background: linear-gradient(to top, #00ff00, #00ffff);
+            border-radius: 5px 5px 0 0;
+            transition: height 0.1s;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎙️ Full AI Pipeline Test - Local</h1>
+        <div class="subtitle">Microphone → Server → ElevenLabs → AI Response → Speakers</div>
+    </div>
+    
+    <div class="status-banner" id="statusBanner" class="idle">
+        Ready to test complete AI pipeline
+    </div>
+    
+    <div class="pipeline">
+        <div class="pipeline-step" id="step1">
+            <div>🎤</div>
+            <div>Microphone</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step" id="step2">
+            <div>🌐</div>
+            <div>WebSocket</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step" id="step3">
+            <div>🤖</div>
+            <div>ElevenLabs AI</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step" id="step4">
+            <div>🔊</div>
+            <div>Speakers</div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="startBtn" onclick="startPipeline()">▶️ Start Full Pipeline</button>
+        <button id="stopBtn" onclick="stopPipeline()" class="stop" disabled>⏹️ Stop</button>
+    </div>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Audio Sent</div>
+            <div class="stat-value" id="audioSent">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">AI Responses</div>
+            <div class="stat-value" id="aiResponses">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Runtime</div>
+            <div class="stat-value" id="runtime">0s</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Latency</div>
+            <div class="stat-value" id="latency">-</div>
+        </div>
+    </div>
+    
+    <div class="audio-visualizer" id="visualizer">
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+        <div class="audio-bar"></div>
+    </div>
+    
+    <div class="log-container" id="logContainer"></div>
+
+    <script>
+        // State
+        let wsInput = null;
+        let wsOutput = null;
+        let mediaStream = null;
+        let audioContext = null;
+        let processor = null;
+        let analyser = null;
+        let audioChunkCount = 0;
+        let aiResponseCount = 0;
+        let startTime = null;
+        let firstChunkTime = null;
+        let isRunning = false;
+        
+        // Logger
+        function log(message, level = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = {
+                'error': '❌',
+                'success': '✅',
+                'info': '📝',
+                'warning': '⚠️'
+            }[level] || '📝';
+            
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+            entry.textContent = `${emoji} [${timestamp}] ${message}`;
+            
+            const container = document.getElementById('logContainer');
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+            
+            console.log(`${emoji} ${message}`);
+        }
+        
+        function updateStatus(message, type = 'idle') {
+            const banner = document.getElementById('statusBanner');
+            banner.textContent = message;
+            banner.className = `status-banner ${type}`;
+        }
+        
+        function activateStep(stepNum, active = true) {
+            const step = document.getElementById(`step${stepNum}`);
+            if (active) {
+                step.classList.add('active');
+            } else {
+                step.classList.remove('active');
+            }
+        }
+        
+        function updateStats() {
+            document.getElementById('audioSent').textContent = audioChunkCount;
+            document.getElementById('aiResponses').textContent = aiResponseCount;
+            
+            if (startTime) {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                document.getElementById('runtime').textContent = `${elapsed}s`;
+            }
+        }
+        
+        // Visualizer
+        function updateVisualizer() {
+            if (!analyser || !isRunning) return;
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+            
+            const bars = document.querySelectorAll('.audio-bar');
+            const step = Math.floor(dataArray.length / bars.length);
+            
+            bars.forEach((bar, index) => {
+                const value = dataArray[index * step];
+                const height = Math.max(5, (value / 255) * 100);
+                bar.style.height = `${height}px`;
+            });
+            
+            requestAnimationFrame(updateVisualizer);
+        }
+        
+        // Main Pipeline
+        async function startPipeline() {
+            try {
+                isRunning = true;
+                audioChunkCount = 0;
+                aiResponseCount = 0;
+                startTime = Date.now();
+                firstChunkTime = null;
+                
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                
+                updateStatus('🚀 Starting pipeline...', 'running');
+                log('Starting full AI pipeline test...', 'info');
+                
+                // Step 1: Connect input WebSocket (for sending audio)
+                log('Connecting input WebSocket...', 'info');
+                activateStep(2, true);
+                
+                wsInput = new WebSocket('ws://localhost:3000/meeting-audio-in');
+                
+                await new Promise((resolve, reject) => {
+                    wsInput.onopen = () => {
+                        log('Input WebSocket connected!', 'success');
+                        resolve();
+                    };
+                    wsInput.onerror = (error) => reject(new Error('Input WebSocket failed'));
+                    setTimeout(() => reject(new Error('Input WebSocket timeout')), 5000);
+                });
+                
+                // Step 2: Connect output WebSocket (for receiving AI audio)
+                log('Connecting output WebSocket...', 'info');
+                
+                wsOutput = new WebSocket('ws://localhost:3000/agent-audio-out');
+                
+                await new Promise((resolve, reject) => {
+                    wsOutput.onopen = () => {
+                        log('Output WebSocket connected!', 'success');
+                        resolve();
+                    };
+                    wsOutput.onerror = (error) => reject(new Error('Output WebSocket failed'));
+                    setTimeout(() => reject(new Error('Output WebSocket timeout')), 5000);
+                });
+                
+                // Handle AI responses
+                wsOutput.onmessage = async (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        
+                        if (message.type === 'audio' && message.data) {
+                            aiResponseCount++;
+                            activateStep(4, true);
+                            
+                            const latency = firstChunkTime ? ((Date.now() - firstChunkTime) / 1000).toFixed(1) : '-';
+                            document.getElementById('latency').textContent = `${latency}s`;
+                            
+                            log(`Received AI audio response #${aiResponseCount} (~${(message.data.length / 1024).toFixed(1)} KB)`, 'success');
+                            updateStats();
+                            
+                            // Play the audio
+                            await playAudioResponse(message.data);
+                            
+                            setTimeout(() => activateStep(4, false), 500);
+                        }
+                    } catch (error) {
+                        log(`Error processing AI response: ${error.message}`, 'error');
+                    }
+                };
+                
+                // Step 3: Capture microphone audio
+                log('Requesting microphone access...', 'info');
+                activateStep(1, true);
+                
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    } 
+                });
+                
+                log('Microphone access granted!', 'success');
+                
+                // Step 4: Create audio processing pipeline
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                
+                // Add analyser for visualization
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                processor.onaudioprocess = (event) => {
+                    if (!isRunning) return;
+                    
+                    const inputData = event.inputBuffer.getChannelData(0);
+                    
+                    // Calculate RMS (Root Mean Square) volume level
+                    let sum = 0;
+                    for (let i = 0; i < inputData.length; i++) {
+                        sum += inputData[i] * inputData[i];
+                    }
+                    const rms = Math.sqrt(sum / inputData.length);
+                    const volume = rms * 100; // Scale to 0-100
+                    
+                    // 🎙️ VOICE ACTIVITY DETECTION
+                    // Only send audio if volume is above threshold (actual speech, not silence)
+                    const VOICE_THRESHOLD = 0.5; // Adjust this value (0.1 = very sensitive, 2.0 = only loud speech)
+                    
+                    if (volume < VOICE_THRESHOLD) {
+                        // Silence detected - don't send to server
+                        return;
+                    }
+                    
+                    // Convert to PCM 16-bit
+                    const pcmData = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Convert to base64
+                    const base64Audio = arrayBufferToBase64(pcmData.buffer);
+                    
+                    // Send to server (only if speech detected)
+                    if (wsInput && wsInput.readyState === WebSocket.OPEN) {
+                        wsInput.send(JSON.stringify({
+                            type: 'audio_chunk',
+                            data: base64Audio,
+                            format: 'pcm16',
+                            sampleRate: audioContext.sampleRate
+                        }));
+                        
+                        audioChunkCount++;
+                        
+                        if (audioChunkCount === 1) {
+                            firstChunkTime = Date.now();
+                            activateStep(3, true);
+                            log(`🎤 Voice detected! (volume: ${volume.toFixed(2)})`, 'success');
+                        }
+                        
+                        if (audioChunkCount % 10 === 0) {
+                            log(`Sent ${audioChunkCount} audio chunks to server → ElevenLabs (vol: ${volume.toFixed(1)})`, 'info');
+                        }
+                        
+                        updateStats();
+                    }
+                };
+                
+                analyser.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                log('Audio processing pipeline established!', 'success');
+                updateStatus('✅ Pipeline Running - Speak into your microphone!', 'running');
+                
+                // Start visualizer
+                updateVisualizer();
+                
+                log('🎤 All systems active! Speak and wait for AI response...', 'success');
+                
+            } catch (error) {
+                log(`Pipeline failed: ${error.message}`, 'error');
+                updateStatus(`❌ Error: ${error.message}`, 'error');
+                stopPipeline();
+            }
+        }
+        
+        async function playAudioResponse(base64Audio) {
+            try {
+                // Decode base64 to binary
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                log(`🔊 Playing AI response (${bytes.length} bytes)...`, 'info');
+                
+                // Check first few bytes to identify format
+                const header = Array.from(bytes.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                log(`Audio header: ${header}`, 'info');
+                
+                // Create a single AudioContext that we'll reuse
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Resume AudioContext if suspended (browser autoplay policy)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                    log('🔊 AudioContext resumed', 'info');
+                }
+                
+                // ElevenLabs likely sends 24kHz PCM based on docs
+                // Let's just use 24kHz and see if it sounds right
+                const sampleRate = 24000;
+                
+                try {
+                    // Convert bytes to 16-bit PCM samples
+                    const pcmSamples = new Int16Array(bytes.buffer);
+                    
+                    log(`Creating buffer: ${pcmSamples.length} samples at ${sampleRate}Hz`, 'info');
+                    
+                    // Create AudioBuffer
+                    const audioBuffer = audioContext.createBuffer(
+                        1,  // mono
+                        pcmSamples.length,
+                        sampleRate
+                    );
+                    
+                    // Convert Int16 to Float32 for Web Audio API
+                    const channelData = audioBuffer.getChannelData(0);
+                    let maxSample = 0;
+                    for (let i = 0; i < pcmSamples.length; i++) {
+                        channelData[i] = pcmSamples[i] / 32768.0; // Normalize to [-1, 1]
+                        maxSample = Math.max(maxSample, Math.abs(channelData[i]));
+                    }
+                    
+                    const duration = audioBuffer.duration;
+                    log(`Buffer created: ${duration.toFixed(2)}s, max amplitude: ${maxSample.toFixed(3)}`, 'info');
+                    
+                    if (maxSample < 0.001) {
+                        throw new Error('Audio is silent (max amplitude too low)');
+                    }
+                    
+                    // Create source and gain node
+                    const source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    
+                    const gainNode = audioContext.createGain();
+                    gainNode.gain.value = 3.0; // Boost to 300%
+                    
+                    source.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    log(`▶️ Playing ${duration.toFixed(2)}s at 24kHz (volume: 300%)`, 'success');
+                    
+                    // Visual feedback
+                    activateStep(4, true);
+                    
+                    await new Promise((resolve, reject) => {
+                        source.onended = () => {
+                            activateStep(4, false);
+                            log('✅ Playback finished', 'success');
+                            audioContext.close(); // Clean up
+                            resolve();
+                        };
+                        
+                        source.onerror = (err) => {
+                            activateStep(4, false);
+                            log(`❌ Playback error: ${err}`, 'error');
+                            audioContext.close();
+                            reject(err);
+                        };
+                        
+                        source.start(0);
+                        log('🎵 Audio started', 'success');
+                    });
+                    
+                    return; // Success!
+                    
+                } catch (e) {
+                    audioContext.close();
+                    throw e;
+                }
+                
+                // If all sample rates failed, log error
+                throw new Error('Could not decode audio with any sample rate');
+                
+            } catch (error) {
+                log(`❌ Audio playback failed: ${error.message}`, 'error');
+                console.error('Full error:', error);
+                console.log('Base64 sample:', base64Audio.substring(0, 100));
+                if (typeof bytes !== 'undefined') {
+                    console.log('Decoded bytes sample:', Array.from(bytes.slice(0, 20)));
+                }
+            }
+        }
+        
+        function stopPipeline() {
+            isRunning = false;
+            
+            if (wsInput) wsInput.close();
+            if (wsOutput) wsOutput.close();
+            if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+            if (audioContext) audioContext.close();
+            
+            for (let i = 1; i <= 4; i++) {
+                activateStep(i, false);
+            }
+            
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            
+            updateStatus('Pipeline stopped', 'idle');
+            log(`Pipeline stopped. Total: ${audioChunkCount} chunks sent, ${aiResponseCount} AI responses received`, 'info');
+        }
+        
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', stopPipeline);
+    </script>
+</body>
+</html>
+

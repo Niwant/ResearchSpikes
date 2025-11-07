@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Diagnostics</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 { color: #0ff; }
+        .test { 
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #333;
+            background: #222;
+        }
+        .pass { color: #0f0; }
+        .fail { color: #f00; }
+        .info { color: #ff0; }
+        button {
+            background: #0f0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+        }
+        button:hover { background: #0c0; }
+        #volumeMeter {
+            height: 20px;
+            background: #333;
+            margin: 10px 0;
+            position: relative;
+        }
+        #volumeBar {
+            height: 100%;
+            background: linear-gradient(to right, #0f0, #ff0, #f00);
+            width: 0%;
+            transition: width 0.1s;
+        }
+        .log {
+            background: #000;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #333;
+        }
+        .log-entry { margin: 2px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Audio Capture Diagnostics</h1>
+    <p>This page helps diagnose audio capture issues in Recall.ai bot context</p>
+
+    <div class="test">
+        <h3>Test 1: Browser Capabilities</h3>
+        <div id="test1">Running...</div>
+    </div>
+
+    <div class="test">
+        <h3>Test 2: MediaDevices API</h3>
+        <button onclick="testMediaDevices()">Test getUserMedia</button>
+        <div id="test2"></div>
+    </div>
+
+    <div class="test">
+        <h3>Test 3: Audio Level Monitoring</h3>
+        <button onclick="startAudioMonitoring()">Start Monitoring</button>
+        <button onclick="stopAudioMonitoring()">Stop</button>
+        <div id="volumeMeter">
+            <div id="volumeBar"></div>
+        </div>
+        <div id="volumeInfo"></div>
+    </div>
+
+    <div class="test">
+        <h3>Test 4: Context Information</h3>
+        <div id="test4"></div>
+    </div>
+
+    <div class="log" id="logContainer"></div>
+
+    <script>
+        let mediaStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let monitoringInterval = null;
+
+        function log(message, level = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+            entry.innerHTML = `<span class="${level}">[${new Date().toLocaleTimeString()}]</span> ${message}`;
+            document.getElementById('logContainer').appendChild(entry);
+            document.getElementById('logContainer').scrollTop = document.getElementById('logContainer').scrollHeight;
+            console.log(message);
+        }
+
+        // Test 1: Browser capabilities
+        function testBrowserCapabilities() {
+            const results = [];
+            
+            results.push(`User Agent: ${navigator.userAgent}`);
+            results.push(`Platform: ${navigator.platform}`);
+            results.push(`MediaDevices: ${navigator.mediaDevices ? '✅' : '❌'}`);
+            results.push(`getUserMedia: ${navigator.mediaDevices?.getUserMedia ? '✅' : '❌'}`);
+            results.push(`AudioContext: ${window.AudioContext || window.webkitAudioContext ? '✅' : '❌'}`);
+            results.push(`WebSocket: ${window.WebSocket ? '✅' : '❌'}`);
+            results.push(`Location: ${window.location.href}`);
+            results.push(`Protocol: ${window.location.protocol}`);
+            results.push(`Is Secure Context: ${window.isSecureContext ? '✅' : '❌'}`);
+            
+            document.getElementById('test1').innerHTML = results.join('<br>');
+            log('Browser capabilities checked');
+        }
+
+        // Test 2: getUserMedia
+        async function testMediaDevices() {
+            const test2 = document.getElementById('test2');
+            test2.innerHTML = '<span class="info">Testing...</span>';
+            log('Starting getUserMedia test...');
+
+            try {
+                // Try to get audio
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
+                const tracks = stream.getAudioTracks();
+                const results = [];
+                
+                results.push('<span class="pass">✅ getUserMedia SUCCESS!</span>');
+                results.push(`Audio tracks: ${tracks.length}`);
+                
+                tracks.forEach((track, idx) => {
+                    results.push(`<br><strong>Track ${idx}:</strong>`);
+                    results.push(`  Label: ${track.label}`);
+                    results.push(`  Enabled: ${track.enabled}`);
+                    results.push(`  Muted: ${track.muted}`);
+                    results.push(`  ReadyState: ${track.readyState}`);
+                    
+                    const settings = track.getSettings();
+                    results.push(`  Settings: ${JSON.stringify(settings, null, 2)}`);
+                    
+                    const capabilities = track.getCapabilities ? track.getCapabilities() : null;
+                    if (capabilities) {
+                        results.push(`  Capabilities: ${JSON.stringify(capabilities, null, 2)}`);
+                    }
+                });
+
+                test2.innerHTML = results.join('<br>');
+                log('getUserMedia test: SUCCESS', 'pass');
+
+                // Keep stream for monitoring
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(t => t.stop());
+                }
+                mediaStream = stream;
+
+            } catch (error) {
+                test2.innerHTML = `<span class="fail">❌ FAILED: ${error.name}<br>${error.message}</span>`;
+                log(`getUserMedia test FAILED: ${error.name} - ${error.message}`, 'fail');
+            }
+        }
+
+        // Test 3: Monitor audio levels
+        function startAudioMonitoring() {
+            if (!mediaStream) {
+                alert('Run Test 2 first to capture audio stream!');
+                return;
+            }
+
+            log('Starting audio level monitoring...');
+
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                let silentSamples = 0;
+                let activeSamples = 0;
+
+                monitoringInterval = setInterval(() => {
+                    analyser.getByteFrequencyData(dataArray);
+                    
+                    // Calculate average volume
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const average = sum / dataArray.length;
+                    const volume = (average / 255) * 100;
+
+                    // Update volume bar
+                    document.getElementById('volumeBar').style.width = volume + '%';
+
+                    // Track silence
+                    if (volume < 1) {
+                        silentSamples++;
+                    } else {
+                        activeSamples++;
+                    }
+
+                    // Update info
+                    const info = document.getElementById('volumeInfo');
+                    info.innerHTML = `
+                        <span class="${volume < 1 ? 'fail' : 'pass'}">Volume: ${volume.toFixed(2)}%</span><br>
+                        Silent samples: ${silentSamples}<br>
+                        Active samples: ${activeSamples}<br>
+                        ${silentSamples > 50 && activeSamples === 0 ? 
+                            '<span class="fail">⚠️ WARNING: Only silence detected!</span>' : ''}
+                    `;
+
+                }, 100);
+
+                log('Audio monitoring started', 'pass');
+
+            } catch (error) {
+                log(`Failed to start monitoring: ${error.message}`, 'fail');
+            }
+        }
+
+        function stopAudioMonitoring() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+                monitoringInterval = null;
+                log('Audio monitoring stopped');
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+        }
+
+        // Test 4: Context info
+        function checkContext() {
+            const results = [];
+            
+            // Check if we're in an iframe
+            results.push(`In iframe: ${window !== window.parent ? '✅ YES' : '❌ NO'}`);
+            results.push(`Frame depth: ${getFrameDepth()}`);
+            
+            // Check referrer
+            results.push(`Referrer: ${document.referrer || '(none)'}`);
+            
+            // Check if Recall.ai context
+            results.push(`Likely Recall.ai bot: ${isLikelyRecallContext() ? '✅ YES' : '❌ NO'}`);
+
+            // Permission state
+            if (navigator.permissions) {
+                navigator.permissions.query({ name: 'microphone' }).then(result => {
+                    results.push(`Microphone permission: ${result.state}`);
+                    document.getElementById('test4').innerHTML = results.join('<br>');
+                });
+            }
+
+            document.getElementById('test4').innerHTML = results.join('<br>');
+        }
+
+        function getFrameDepth() {
+            let depth = 0;
+            let win = window;
+            while (win !== win.parent && depth < 10) {
+                depth++;
+                win = win.parent;
+            }
+            return depth;
+        }
+
+        function isLikelyRecallContext() {
+            const url = window.location.href.toLowerCase();
+            const referrer = document.referrer.toLowerCase();
+            return url.includes('recall') || 
+                   referrer.includes('recall') || 
+                   url.includes('ngrok') ||
+                   navigator.userAgent.includes('Recall');
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            testBrowserCapabilities();
+            checkContext();
+            log('Diagnostic page loaded', 'info');
+            log('Run the tests in order (2 → 3)', 'info');
+        });
+
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            stopAudioMonitoring();
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(t => t.stop());
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+

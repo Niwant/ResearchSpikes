@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent - Audio Output Only</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffeaa7;
+        }
+        
+        .audio-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        
+        .sound-waves {
+            display: flex;
+            gap: 5px;
+            height: 40px;
+            align-items: flex-end;
+        }
+        
+        .wave {
+            width: 5px;
+            background: linear-gradient(to top, #667eea, #764ba2);
+            border-radius: 5px;
+            animation: wave 1s ease-in-out infinite;
+        }
+        
+        .wave:nth-child(1) { animation-delay: 0s; height: 10px; }
+        .wave:nth-child(2) { animation-delay: 0.1s; height: 20px; }
+        .wave:nth-child(3) { animation-delay: 0.2s; height: 30px; }
+        .wave:nth-child(4) { animation-delay: 0.3s; height: 40px; }
+        .wave:nth-child(5) { animation-delay: 0.4s; height: 35px; }
+        .wave:nth-child(6) { animation-delay: 0.5s; height: 25px; }
+        .wave:nth-child(7) { animation-delay: 0.6s; height: 15px; }
+        
+        @keyframes wave {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(1.5); }
+        }
+        
+        .stats {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+        
+        .log {
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 10px;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            margin: 3px 0;
+        }
+        
+        .log-entry.success { color: #68d391; }
+        .log-entry.error { color: #fc8181; }
+        .log-entry.info { color: #63b3ed; }
+        .log-entry.warning { color: #f6e05e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔊 AI Agent Bot</h1>
+        <div class="subtitle">Audio Output Only - Receives AI responses</div>
+        
+        <div id="status" class="status connecting">
+            Initializing...
+        </div>
+        
+        <div class="audio-indicator" id="audioIndicator" style="display: none;">
+            <div class="sound-waves">
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stats-row">
+                <span>Audio Input:</span>
+                <span id="audioInput">Recall.ai ✅</span>
+            </div>
+            <div class="stats-row">
+                <span>AI Responses:</span>
+                <span id="aiResponses">0</span>
+            </div>
+            <div class="stats-row">
+                <span>Server connection:</span>
+                <span id="serverStatus">Disconnected</span>
+            </div>
+            <div class="stats-row">
+                <span>Audio queue:</span>
+                <span id="queueSize">0</span>
+            </div>
+        </div>
+        
+        <div class="log" id="logContainer"></div>
+    </div>
+
+    <script>
+        // State
+        let wsOutput = null;
+        let audioOutputQueue = [];
+        let isPlayingOutput = false;
+        let aiResponseCount = 0;
+        
+        // Logging
+        function log(message, level = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = level === 'error' ? '❌' : level === 'success' ? '✅' : level === 'warning' ? '⚠️' : '📝';
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${level}`;
+            logEntry.textContent = `${emoji} [${timestamp}] ${message}`;
+            const logContainer = document.getElementById('logContainer');
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`${emoji} ${message}`);
+        }
+        
+        // Update UI
+        function updateStatus(className, text) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = `status ${className}`;
+            statusEl.textContent = text;
+        }
+        
+        function updateStats() {
+            document.getElementById('aiResponses').textContent = aiResponseCount;
+            document.getElementById('queueSize').textContent = audioOutputQueue.length;
+        }
+        
+        // Connect to server OUTPUT WebSocket only (for receiving AI audio)
+        async function connectToServer() {
+            return new Promise((resolve, reject) => {
+                try {
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsHost = window.location.host;
+                    const wsOutputUrl = `${wsProtocol}//${wsHost}/agent-audio-out`;
+                    
+                    log(`Connecting to OUTPUT WebSocket: ${wsOutputUrl}`);
+                    wsOutput = new WebSocket(wsOutputUrl);
+                    
+                    wsOutput.onopen = () => {
+                        log('✅ Connected! Ready to receive AI audio', 'success');
+                        document.getElementById('serverStatus').textContent = 'Connected ✅';
+                        updateStatus('connected', 'Connected - Ready for AI responses');
+                        document.getElementById('audioIndicator').style.display = 'flex';
+                        resolve();
+                    };
+                    
+                    wsOutput.onmessage = (event) => {
+                        try {
+                            const message = JSON.parse(event.data);
+                            
+                            if (message.type === 'audio' && message.data) {
+                                aiResponseCount++;
+                                log(`🎵 AI Response #${aiResponseCount} received (~${(message.data.length / 1024).toFixed(1)} KB)`, 'success');
+                                audioOutputQueue.push(message.data);
+                                updateStats();
+                                playNextAudioOutput();
+                            }
+                        } catch (error) {
+                            log(`Error processing AI audio: ${error.message}`, 'error');
+                        }
+                    };
+                    
+                    wsOutput.onerror = (error) => {
+                        log('WebSocket error: ' + (error.message || 'Unknown'), 'error');
+                        document.getElementById('serverStatus').textContent = 'Error ❌';
+                        reject(error);
+                    };
+                    
+                    wsOutput.onclose = (event) => {
+                        log(`Disconnected from server (code: ${event.code})`, 'error');
+                        document.getElementById('serverStatus').textContent = 'Disconnected ❌';
+                        updateStatus('disconnected', 'Disconnected');
+                        document.getElementById('audioIndicator').style.display = 'none';
+                    };
+                } catch (error) {
+                    log(`Failed to create WebSocket: ${error.message}`, 'error');
+                    reject(error);
+                }
+            });
+        }
+        
+        // Play AI audio output
+        async function playNextAudioOutput() {
+            if (isPlayingOutput || audioOutputQueue.length === 0) {
+                return;
+            }
+            
+            isPlayingOutput = true;
+            const base64Audio = audioOutputQueue.shift();
+            updateStats();
+            
+            try {
+                log('🔊 Playing AI response in meeting...', 'info');
+                
+                // Decode base64 to binary
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // ElevenLabs sends PCM 16kHz 16-bit mono audio (per conversation_initiation_metadata)
+                const sampleRate = 16000;
+                
+                // Convert bytes to 16-bit PCM samples
+                const pcmSamples = new Int16Array(bytes.buffer);
+                
+                // Create AudioContext for playback
+                const playbackContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Resume if suspended (browser autoplay policy)
+                if (playbackContext.state === 'suspended') {
+                    await playbackContext.resume();
+                }
+                
+                // Create AudioBuffer
+                const audioBuffer = playbackContext.createBuffer(
+                    1,  // mono
+                    pcmSamples.length,
+                    sampleRate
+                );
+                
+                // Convert Int16 to Float32 for Web Audio API
+                const channelData = audioBuffer.getChannelData(0);
+                for (let i = 0; i < pcmSamples.length; i++) {
+                    channelData[i] = pcmSamples[i] / 32768.0; // Normalize to [-1, 1]
+                }
+                
+                // Create source and play
+                const source = playbackContext.createBufferSource();
+                source.buffer = audioBuffer;
+                
+                // Add gain for volume control
+                const gainNode = playbackContext.createGain();
+                gainNode.gain.value = 2.0; // Boost volume to 200%
+                
+                source.connect(gainNode);
+                gainNode.connect(playbackContext.destination);
+                
+                const duration = audioBuffer.duration;
+                log(`▶️ Playing ${duration.toFixed(2)}s of AI audio`, 'success');
+                
+                source.onended = () => {
+                    log('✅ AI audio playback finished', 'success');
+                    playbackContext.close();
+                    isPlayingOutput = false;
+                    playNextAudioOutput(); // Play next if queued
+                };
+                
+                source.start(0);
+                
+            } catch (error) {
+                log(`❌ Error playing audio: ${error.message}`, 'error');
+                console.error('Full playback error:', error);
+                isPlayingOutput = false;
+                playNextAudioOutput(); // Try next audio
+            }
+        }
+        
+        // Initialize
+        async function init() {
+            try {
+                log('Initializing AI Agent Bot (Output Only)...');
+                log('Audio INPUT: Handled by Recall.ai', 'info');
+                log('Audio OUTPUT: This webpage plays AI responses', 'info');
+                
+                // Connect to server output websocket
+                await connectToServer();
+                log('Ready to receive AI audio responses!', 'success');
+                
+            } catch (error) {
+                log(`Initialization error: ${error.message}`, 'error');
+                updateStatus('disconnected', `Init failed: ${error.message}`);
+            }
+        }
+        
+        // Global error handler
+        window.addEventListener('error', (event) => {
+            log(`Global error: ${event.message}`, 'error');
+            console.error('Error details:', event.error);
+        });
+        
+        // Unhandled promise rejection handler
+        window.addEventListener('unhandledrejection', (event) => {
+            log(`Unhandled promise rejection: ${event.reason}`, 'error');
+            console.error('Rejection details:', event.reason);
+        });
+        
+        // Start when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
+

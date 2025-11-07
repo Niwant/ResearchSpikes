@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Audio Test</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #00ff00;
+        }
+        
+        .container {
+            background: #000;
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #00ff00;
+        }
+        
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #333;
+            border-radius: 5px;
+        }
+        
+        .test-section h2 {
+            color: #ffff00;
+            margin-top: 0;
+        }
+        
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #00cc00;
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        
+        .status.success { background: #004400; color: #00ff00; }
+        .status.error { background: #440000; color: #ff0000; }
+        .status.info { background: #004444; color: #00ffff; }
+        
+        .log {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        
+        .log-entry {
+            margin: 3px 0;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .stat {
+            background: #222;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        .stat-label {
+            color: #888;
+            font-size: 12px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Local Audio Capture Test</h1>
+        
+        <!-- Test 1: WebSocket Connection -->
+        <div class="test-section">
+            <h2>Test 1: WebSocket Connection</h2>
+            <button id="testWsBtn" onclick="testWebSocket()">Test WebSocket</button>
+            <div id="wsStatus" class="status info">Not tested</div>
+            <div class="log" id="wsLog"></div>
+        </div>
+        
+        <!-- Test 2: Audio Capture -->
+        <div class="test-section">
+            <h2>Test 2: Audio Capture (getUserMedia)</h2>
+            <button id="testAudioBtn" onclick="testAudioCapture()">Test Audio Capture</button>
+            <button id="stopAudioBtn" onclick="stopAudioCapture()" disabled>Stop</button>
+            <div id="audioStatus" class="status info">Not tested</div>
+            <div class="log" id="audioLog"></div>
+        </div>
+        
+        <!-- Test 3: Full Flow -->
+        <div class="test-section">
+            <h2>Test 3: Full Flow (WebSocket + Audio)</h2>
+            <button id="testFullBtn" onclick="testFullFlow()">Start Full Test</button>
+            <button id="stopFullBtn" onclick="stopFullFlow()" disabled>Stop</button>
+            <div id="fullStatus" class="status info">Not tested</div>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-label">Audio Chunks Sent</div>
+                    <div class="stat-value" id="chunksSent">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Connection Time</div>
+                    <div class="stat-value" id="connectionTime">0s</div>
+                </div>
+            </div>
+            
+            <div class="log" id="fullLog"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let mediaStream = null;
+        let audioContext = null;
+        let processor = null;
+        let audioChunkCount = 0;
+        let startTime = null;
+        
+        // Logger helper
+        function log(containerId, message, level = 'info') {
+            const container = document.getElementById(containerId);
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = level === 'error' ? '❌' : level === 'success' ? '✅' : '📝';
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `${emoji} [${timestamp}] ${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+            console.log(`${emoji} ${message}`);
+        }
+        
+        function updateStatus(statusId, message, type) {
+            const status = document.getElementById(statusId);
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        // Test 1: WebSocket Connection
+        async function testWebSocket() {
+            const wsUrl = `ws://localhost:3000/meeting-audio-in`;
+            log('wsLog', `Testing WebSocket connection to ${wsUrl}`);
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    log('wsLog', 'WebSocket connected!', 'success');
+                    updateStatus('wsStatus', '✅ WebSocket Connected', 'success');
+                    
+                    // Send test message
+                    ws.send(JSON.stringify({ type: 'test', message: 'Hello from test page' }));
+                    log('wsLog', 'Sent test message');
+                    
+                    // Close after 2 seconds
+                    setTimeout(() => {
+                        if (ws) {
+                            ws.close();
+                            log('wsLog', 'Closed connection');
+                        }
+                    }, 2000);
+                };
+                
+                ws.onerror = (error) => {
+                    log('wsLog', `WebSocket error: ${error}`, 'error');
+                    updateStatus('wsStatus', '❌ WebSocket Error', 'error');
+                };
+                
+                ws.onclose = (event) => {
+                    log('wsLog', `WebSocket closed (code: ${event.code})`);
+                    if (event.code === 1000) {
+                        updateStatus('wsStatus', '✅ WebSocket Test Complete', 'success');
+                    }
+                };
+                
+                ws.onmessage = (event) => {
+                    log('wsLog', `Received: ${event.data}`);
+                };
+                
+            } catch (error) {
+                log('wsLog', `Failed to create WebSocket: ${error.message}`, 'error');
+                updateStatus('wsStatus', `❌ Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        // Test 2: Audio Capture
+        async function testAudioCapture() {
+            log('audioLog', 'Testing getUserMedia...');
+            
+            try {
+                // Check if getUserMedia is available
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('getUserMedia not supported in this browser');
+                }
+                
+                log('audioLog', 'getUserMedia is available', 'success');
+                
+                // Request audio
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    } 
+                });
+                
+                log('audioLog', 'Audio access granted!', 'success');
+                log('audioLog', `Audio tracks: ${mediaStream.getAudioTracks().length}`);
+                
+                const track = mediaStream.getAudioTracks()[0];
+                log('audioLog', `Track label: ${track.label}`);
+                log('audioLog', `Track enabled: ${track.enabled}`);
+                log('audioLog', `Track settings: ${JSON.stringify(track.getSettings())}`);
+                
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                log('audioLog', `AudioContext created (${audioContext.sampleRate}Hz)`, 'success');
+                
+                // Create analyzer to visualize audio
+                const analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                source.connect(analyser);
+                
+                log('audioLog', 'Audio pipeline connected', 'success');
+                updateStatus('audioStatus', '✅ Audio Capture Working', 'success');
+                
+                document.getElementById('testAudioBtn').disabled = true;
+                document.getElementById('stopAudioBtn').disabled = false;
+                
+                // Monitor audio level
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const checkAudioLevel = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    
+                    if (average > 10) {
+                        log('audioLog', `Audio detected! Level: ${average.toFixed(2)}`);
+                    }
+                };
+                
+                setInterval(checkAudioLevel, 1000);
+                
+            } catch (error) {
+                log('audioLog', `Audio capture failed: ${error.name} - ${error.message}`, 'error');
+                updateStatus('audioStatus', `❌ Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function stopAudioCapture() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                log('audioLog', 'Audio capture stopped');
+            }
+            if (audioContext) {
+                audioContext.close();
+                log('audioLog', 'AudioContext closed');
+            }
+            
+            document.getElementById('testAudioBtn').disabled = false;
+            document.getElementById('stopAudioBtn').disabled = true;
+            updateStatus('audioStatus', 'Audio test stopped', 'info');
+        }
+        
+        // Test 3: Full Flow
+        async function testFullFlow() {
+            audioChunkCount = 0;
+            startTime = Date.now();
+            
+            log('fullLog', 'Starting full flow test...');
+            updateStatus('fullStatus', 'Testing...', 'info');
+            
+            try {
+                // 1. Connect WebSocket
+                const wsUrl = `ws://localhost:3000/meeting-audio-in`;
+                log('fullLog', `Connecting to ${wsUrl}`);
+                
+                ws = new WebSocket(wsUrl);
+                
+                await new Promise((resolve, reject) => {
+                    ws.onopen = () => {
+                        log('fullLog', 'WebSocket connected!', 'success');
+                        resolve();
+                    };
+                    ws.onerror = reject;
+                    setTimeout(() => reject(new Error('WebSocket timeout')), 5000);
+                });
+                
+                // 2. Capture audio
+                log('fullLog', 'Requesting audio access...');
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    } 
+                });
+                
+                log('fullLog', 'Audio access granted!', 'success');
+                
+                // 3. Create audio processing pipeline
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                processor.onaudioprocess = (event) => {
+                    const inputData = event.inputBuffer.getChannelData(0);
+                    
+                    // Convert to PCM 16-bit
+                    const pcmData = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Convert to base64
+                    const base64Audio = arrayBufferToBase64(pcmData.buffer);
+                    
+                    // Send to server
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'audio_chunk',
+                            data: base64Audio,
+                            format: 'pcm16',
+                            sampleRate: audioContext.sampleRate
+                        }));
+                        
+                        audioChunkCount++;
+                        document.getElementById('chunksSent').textContent = audioChunkCount;
+                        
+                        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                        document.getElementById('connectionTime').textContent = `${elapsed}s`;
+                        
+                        if (audioChunkCount % 10 === 0) {
+                            log('fullLog', `Sent ${audioChunkCount} chunks (${elapsed}s)`);
+                        }
+                    }
+                };
+                
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                log('fullLog', 'Audio pipeline established!', 'success');
+                updateStatus('fullStatus', '✅ Full Flow Working!', 'success');
+                
+                document.getElementById('testFullBtn').disabled = true;
+                document.getElementById('stopFullBtn').disabled = false;
+                
+            } catch (error) {
+                log('fullLog', `Full flow failed: ${error.message}`, 'error');
+                updateStatus('fullStatus', `❌ Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function stopFullFlow() {
+            if (ws) {
+                ws.close();
+                log('fullLog', 'WebSocket closed');
+            }
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                log('fullLog', 'Audio capture stopped');
+            }
+            if (audioContext) {
+                audioContext.close();
+                log('fullLog', 'AudioContext closed');
+            }
+            
+            document.getElementById('testFullBtn').disabled = false;
+            document.getElementById('stopFullBtn').disabled = true;
+            updateStatus('fullStatus', 'Test stopped', 'info');
+            
+            log('fullLog', `Final stats: ${audioChunkCount} chunks sent`, 'success');
+        }
+        
+        // Utility: Convert ArrayBuffer to Base64
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+    </script>
+</body>
+</html>
+
+
