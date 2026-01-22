@@ -212,8 +212,8 @@
         
         // Connect to server WebSockets (both input and output)
         async function connectToServer() {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsHost = window.location.host;
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsHost = window.location.host;
             
             // Connect to INPUT WebSocket (for sending audio TO server)
             const inputPromise = new Promise((resolve, reject) => {
@@ -348,11 +348,11 @@
                             },
                             // Try basic audio
                             {
-                                audio: {
-                                    echoCancellation: false,
-                                    noiseSuppression: false,
-                                    autoGainControl: false
-                                }
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    } 
                             },
                             // Last resort
                             { audio: true }
